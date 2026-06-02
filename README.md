@@ -3,6 +3,12 @@
 
 > Deploy an Azure Kubernetes Service (AKS) cluster using Terraform in GitHub Codespaces and run a multi-container retail store demo application.
 
+> 📌 **Based on official Microsoft documentation:**
+> This project was built following the official Microsoft quickstart guide:
+> [Quickstart: Deploy an AKS cluster using Terraform (Azure CLI)](https://learn.microsoft.com/en-us/azure/aks/learn/quick-kubernetes-deploy-terraform?pivots=development-environment-azure-cli)
+
+
+
 ---
 
 ## 📋 Table of Contents
