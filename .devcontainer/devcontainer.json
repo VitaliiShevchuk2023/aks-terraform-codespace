@@ -1,0 +1,17 @@
+{
+  "name": "AKS Terraform Dev",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/terraform:1": {
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/azure-cli:1": {
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
+      "version": "latest",
+      "kubectl": "latest"
+    }
+  },
+  "postCreateCommand": "terraform version && az version && kubectl version --client"
+}
