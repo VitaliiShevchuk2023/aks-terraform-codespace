@@ -3,11 +3,11 @@
 
 > Deploy an Azure Kubernetes Service (AKS) cluster using Terraform in GitHub Codespaces and run a multi-container retail store demo application.
 
+---
+
 > 📌 **Based on official Microsoft documentation:**
 > This project was built following the official Microsoft quickstart guide:
 > [Quickstart: Deploy an AKS cluster using Terraform (Azure CLI)](https://learn.microsoft.com/en-us/azure/aks/learn/quick-kubernetes-deploy-terraform?pivots=development-environment-azure-cli)
-
-
 
 ---
 
@@ -375,7 +375,12 @@ az group list --query "[].name" -o table
 
 ## 📄 Terraform Configuration Files
 
-### `providers.tf` — Providers and Versions
+Click on each file name to expand the full source code.
+
+---
+
+<details>
+<summary><strong>📁 providers.tf</strong> — Terraform providers and version constraints</summary>
 
 ```hcl
 terraform {
@@ -406,7 +411,135 @@ provider "azurerm" {
 }
 ```
 
-### `variables.tf` — Input Variables
+</details>
+
+---
+
+<details>
+<summary><strong>📁 ssh.tf</strong> — SSH key pair generation via AzAPI</summary>
+
+```hcl
+resource "random_pet" "ssh_key_name" {
+  prefix    = "ssh"
+  separator = ""
+}
+
+resource "azapi_resource_action" "ssh_public_key_gen" {
+  type        = "Microsoft.Compute/sshPublicKeys@2022-11-01"
+  resource_id = azapi_resource.ssh_public_key.id
+  action      = "generateKeyPair"
+  method      = "POST"
+
+  response_export_values = ["publicKey", "privateKey"]
+}
+
+resource "azapi_resource" "ssh_public_key" {
+  type      = "Microsoft.Compute/sshPublicKeys@2022-11-01"
+  name      = random_pet.ssh_key_name.id
+  location  = azurerm_resource_group.rg.location
+  parent_id = azurerm_resource_group.rg.id
+}
+
+output "key_data" {
+  value = azapi_resource_action.ssh_public_key_gen.output.publicKey
+}
+```
+
+</details>
+
+---
+
+<details>
+<summary><strong>📁 main.tf</strong> — Resource Group and AKS cluster definition</summary>
+
+```hcl
+# Generate random resource group name
+resource "random_pet" "rg_name" {
+  prefix = var.resource_group_name_prefix
+}
+
+resource "azurerm_resource_group" "rg" {
+  location = var.resource_group_location
+  name     = random_pet.rg_name.id
+}
+
+resource "random_pet" "azurerm_kubernetes_cluster_name" {
+  prefix = "cluster"
+}
+
+resource "random_pet" "azurerm_kubernetes_cluster_dns_prefix" {
+  prefix = "dns"
+}
+
+resource "azurerm_kubernetes_cluster" "k8s" {
+  location            = azurerm_resource_group.rg.location
+  name                = random_pet.azurerm_kubernetes_cluster_name.id
+  resource_group_name = azurerm_resource_group.rg.name
+  dns_prefix          = random_pet.azurerm_kubernetes_cluster_dns_prefix.id
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  default_node_pool {
+    name       = "agentpool"
+    vm_size    = "Standard_D2_v2"
+    node_count = var.node_count
+  }
+
+  linux_profile {
+    admin_username = var.username
+
+    ssh_key {
+      key_data = azapi_resource_action.ssh_public_key_gen.output.publicKey
+    }
+  }
+
+  network_profile {
+    network_plugin    = "kubenet"
+    load_balancer_sku = "standard"
+  }
+}
+```
+
+</details>
+
+---
+
+<details>
+<summary><strong>📁 variables.tf</strong> — Input variable definitions</summary>
+
+```hcl
+variable "resource_group_location" {
+  type        = string
+  default     = "eastus"
+  description = "Location of the resource group."
+}
+
+variable "resource_group_name_prefix" {
+  type        = string
+  default     = "rg"
+  description = "Prefix of the resource group name that's combined with a random ID so name is unique in your Azure subscription."
+}
+
+variable "node_count" {
+  type        = number
+  description = "The initial quantity of nodes for the node pool."
+  default     = 3
+}
+
+variable "msi_id" {
+  type        = string
+  description = "The Managed Service Identity ID. Set this value if you're running this example using Managed Identity as the authentication method."
+  default     = null
+}
+
+variable "username" {
+  type        = string
+  description = "The admin username for the new cluster."
+  default     = "azureadmin"
+}
+```
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
@@ -416,7 +549,57 @@ provider "azurerm" {
 | `username` | string | `azureadmin` | Admin username for the cluster nodes |
 | `msi_id` | string | `null` | Managed Service Identity ID (optional) |
 
-### `outputs.tf` — Output Values
+</details>
+
+---
+
+<details>
+<summary><strong>📁 outputs.tf</strong> — Output values exposed after deployment</summary>
+
+```hcl
+output "resource_group_name" {
+  value = azurerm_resource_group.rg.name
+}
+
+output "kubernetes_cluster_name" {
+  value = azurerm_kubernetes_cluster.k8s.name
+}
+
+output "client_certificate" {
+  value     = azurerm_kubernetes_cluster.k8s.kube_config[0].client_certificate
+  sensitive = true
+}
+
+output "client_key" {
+  value     = azurerm_kubernetes_cluster.k8s.kube_config[0].client_key
+  sensitive = true
+}
+
+output "cluster_ca_certificate" {
+  value     = azurerm_kubernetes_cluster.k8s.kube_config[0].cluster_ca_certificate
+  sensitive = true
+}
+
+output "cluster_password" {
+  value     = azurerm_kubernetes_cluster.k8s.kube_config[0].password
+  sensitive = true
+}
+
+output "cluster_username" {
+  value     = azurerm_kubernetes_cluster.k8s.kube_config[0].username
+  sensitive = true
+}
+
+output "host" {
+  value     = azurerm_kubernetes_cluster.k8s.kube_config[0].host
+  sensitive = true
+}
+
+output "kube_config" {
+  value     = azurerm_kubernetes_cluster.k8s.kube_config_raw
+  sensitive = true
+}
+```
 
 | Output | Description | Sensitive |
 |--------|-------------|-----------|
@@ -429,6 +612,244 @@ provider "azurerm" {
 | `cluster_ca_certificate` | Cluster CA certificate | **Yes** |
 | `cluster_username` | Cluster admin username | **Yes** |
 | `cluster_password` | Cluster admin password | **Yes** |
+
+</details>
+
+---
+
+<details>
+<summary><strong>📁 aks-store-quickstart.yaml</strong> — Kubernetes manifest for the retail store application</summary>
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+    spec:
+      nodeSelector:
+        "kubernetes.io/os": linux
+      containers:
+      - name: rabbitmq
+        image: mcr.microsoft.com/mirror/docker/library/rabbitmq:3.10-management-alpine
+        ports:
+        - containerPort: 5672
+          name: rabbitmq-amqp
+        - containerPort: 15672
+          name: rabbitmq-http
+        env:
+        - name: RABBITMQ_DEFAULT_USER
+          value: "username"
+        - name: RABBITMQ_DEFAULT_PASS
+          value: "password"
+        resources:
+          requests:
+            cpu: 10m
+            memory: 128Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        volumeMounts:
+        - name: rabbitmq-enabled-plugins
+          mountPath: /etc/rabbitmq/enabled_plugins
+          subPath: enabled_plugins
+      volumes:
+      - name: rabbitmq-enabled-plugins
+        configMap:
+          name: rabbitmq-enabled-plugins
+          items:
+          - key: rabbitmq_enabled_plugins
+            path: enabled_plugins
+---
+apiVersion: v1
+data:
+  rabbitmq_enabled_plugins: |
+    [rabbitmq_management,rabbitmq_prometheus,rabbitmq_amqp1_0].
+kind: ConfigMap
+metadata:
+  name: rabbitmq-enabled-plugins
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+spec:
+  selector:
+    app: rabbitmq
+  ports:
+    - name: rabbitmq-amqp
+      port: 5672
+      targetPort: 5672
+    - name: rabbitmq-http
+      port: 15672
+      targetPort: 15672
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+    spec:
+      nodeSelector:
+        "kubernetes.io/os": linux
+      containers:
+      - name: order-service
+        image: ghcr.io/azure-samples/aks-store-demo/order-service:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: ORDER_QUEUE_HOSTNAME
+          value: "rabbitmq"
+        - name: ORDER_QUEUE_PORT
+          value: "5672"
+        - name: ORDER_QUEUE_USERNAME
+          value: "username"
+        - name: ORDER_QUEUE_PASSWORD
+          value: "password"
+        - name: ORDER_QUEUE_NAME
+          value: "orders"
+        - name: FASTIFY_ADDRESS
+          value: "0.0.0.0"
+        resources:
+          requests:
+            cpu: 1m
+            memory: 50Mi
+          limits:
+            cpu: 75m
+            memory: 128Mi
+      initContainers:
+      - name: wait-for-rabbitmq
+        image: busybox
+        command: ['sh', '-c', 'until nc -zv rabbitmq 5672; do echo waiting for rabbitmq; sleep 2; done;']
+        resources:
+          requests:
+            cpu: 1m
+            memory: 50Mi
+          limits:
+            cpu: 75m
+            memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+  selector:
+    app: order-service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: product-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: product-service
+  template:
+    metadata:
+      labels:
+        app: product-service
+    spec:
+      nodeSelector:
+        "kubernetes.io/os": linux
+      containers:
+      - name: product-service
+        image: ghcr.io/azure-samples/aks-store-demo/product-service:latest
+        ports:
+        - containerPort: 3002
+        resources:
+          requests:
+            cpu: 1m
+            memory: 1Mi
+          limits:
+            cpu: 1m
+            memory: 7Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: product-service
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 3002
+    targetPort: 3002
+  selector:
+    app: product-service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: store-front
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: store-front
+  template:
+    metadata:
+      labels:
+        app: store-front
+    spec:
+      nodeSelector:
+        "kubernetes.io/os": linux
+      containers:
+      - name: store-front
+        image: ghcr.io/azure-samples/aks-store-demo/store-front:latest
+        ports:
+        - containerPort: 8080
+          name: store-front
+        env:
+        - name: VUE_APP_ORDER_SERVICE_URL
+          value: "http://order-service:3000/"
+        - name: VUE_APP_PRODUCT_SERVICE_URL
+          value: "http://product-service:3002/"
+        resources:
+          requests:
+            cpu: 1m
+            memory: 200Mi
+          limits:
+            cpu: 1000m
+            memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: store-front
+spec:
+  ports:
+  - port: 80
+    targetPort: 8080
+  selector:
+    app: store-front
+  type: LoadBalancer
+```
+
+</details>
 
 ---
 
@@ -570,8 +991,15 @@ Please ensure your changes pass `terraform validate` and `terraform fmt` before 
 
 ---
 
+## 📝 License
+
+This project is distributed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+---
 
 <div align="center">
+
+**Built for learning purposes as part of the EPAM Security Junior Adoption Program**
 
 [![Azure](https://img.shields.io/badge/Azure-AKS-0089D6?logo=microsoft-azure&logoColor=white)](https://azure.microsoft.com)
 [![Terraform](https://img.shields.io/badge/IaC-Terraform-7B42BC?logo=terraform&logoColor=white)](https://terraform.io)
