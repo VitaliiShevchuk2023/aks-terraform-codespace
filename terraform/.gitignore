@@ -1,0 +1,13 @@
+# Terraform state - contains sensitive data
+terraform.tfstate
+terraform.tfstate.backup
+
+# Terraform plan files
+*.tfplan
+
+# Terraform working directory
+.terraform/
+.terraform.lock.hcl
+
+# kubeconfig - contains cluster credentials
+azurek8s

@@ -1,4 +1,3 @@
-# Generate random resource group name
 resource "random_pet" "rg_name" {
   prefix = var.resource_group_name_prefix
 }
@@ -28,7 +27,7 @@ resource "azurerm_kubernetes_cluster" "k8s" {
 
   default_node_pool {
     name       = "agentpool"
-    vm_size    = "Standard_D2_v2"
+    vm_size    = var.vm_size
     node_count = var.node_count
   }
 
@@ -36,7 +35,7 @@ resource "azurerm_kubernetes_cluster" "k8s" {
     admin_username = var.username
 
     ssh_key {
-      key_data = azapi_resource_action.ssh_public_key_gen.output.publicKey
+      key_data = tls_private_key.ssh.public_key_openssh
     }
   }
 

@@ -7,7 +7,7 @@ variable "resource_group_location" {
 variable "resource_group_name_prefix" {
   type        = string
   default     = "rg"
-  description = "Prefix of the resource group name that's combined with a random ID so name is unique in your Azure subscription."
+  description = "Prefix of the resource group name."
 }
 
 variable "node_count" {
@@ -18,7 +18,7 @@ variable "node_count" {
 
 variable "msi_id" {
   type        = string
-  description = "The Managed Service Identity ID. Set this value if you're running this example using Managed Identity as the authentication method."
+  description = "The Managed Service Identity ID."
   default     = null
 }
 
@@ -26,4 +26,10 @@ variable "username" {
   type        = string
   description = "The admin username for the new cluster."
   default     = "azureadmin"
+}
+
+variable "vm_size" {
+  type        = string
+  description = "VM size for the node pool."
+  default     = "Standard_D2s_v3"
 }

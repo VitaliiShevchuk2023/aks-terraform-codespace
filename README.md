@@ -382,15 +382,17 @@ Click on each file name to expand the full source code.
 <details>
 <summary><strong>📁 providers.tf</strong> — Terraform providers and version constraints</summary>
 
+> ⚠️ **Note:** The original tutorial uses `azapi` provider for SSH key generation.
+> In GitHub Codespaces this causes a `ChainedTokenCredential` / `Identity not found` error
+> because Managed Identity (IMDS) is not available in that environment.
+> The `azapi` and `time` providers have been replaced with the `tls` provider,
+> which generates the SSH key pair locally without requiring Azure authentication.
+
 ```hcl
 terraform {
   required_version = ">=1.0"
 
   required_providers {
-    azapi = {
-      source  = "azure/azapi"
-      version = "~>1.5"
-    }
     azurerm = {
       source  = "hashicorp/azurerm"
       version = "~>3.0"
@@ -399,9 +401,9 @@ terraform {
       source  = "hashicorp/random"
       version = "~>3.0"
     }
-    time = {
-      source  = "hashicorp/time"
-      version = "0.9.1"
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~>4.0"
     }
   }
 }
@@ -416,32 +418,23 @@ provider "azurerm" {
 ---
 
 <details>
-<summary><strong>📁 ssh.tf</strong> — SSH key pair generation via AzAPI</summary>
+<summary><strong>📁 ssh.tf</strong> — SSH key pair generation via TLS provider</summary>
+
+> ⚠️ **Note:** The original tutorial generates SSH keys using `azapi_resource` and
+> `azapi_resource_action` (Microsoft.Compute/sshPublicKeys). This approach fails in
+> GitHub Codespaces with `Identity not found` because it relies on Azure Managed Identity.
+> Replaced with `tls_private_key` which generates the RSA key pair locally inside Terraform,
+> requiring no Azure authentication at this step.
 
 ```hcl
-resource "random_pet" "ssh_key_name" {
-  prefix    = "ssh"
-  separator = ""
-}
-
-resource "azapi_resource_action" "ssh_public_key_gen" {
-  type        = "Microsoft.Compute/sshPublicKeys@2022-11-01"
-  resource_id = azapi_resource.ssh_public_key.id
-  action      = "generateKeyPair"
-  method      = "POST"
-
-  response_export_values = ["publicKey", "privateKey"]
-}
-
-resource "azapi_resource" "ssh_public_key" {
-  type      = "Microsoft.Compute/sshPublicKeys@2022-11-01"
-  name      = random_pet.ssh_key_name.id
-  location  = azurerm_resource_group.rg.location
-  parent_id = azurerm_resource_group.rg.id
+resource "tls_private_key" "ssh" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
 }
 
 output "key_data" {
-  value = azapi_resource_action.ssh_public_key_gen.output.publicKey
+  value     = tls_private_key.ssh.public_key_openssh
+  sensitive = true
 }
 ```
 
@@ -451,6 +444,12 @@ output "key_data" {
 
 <details>
 <summary><strong>📁 main.tf</strong> — Resource Group and AKS cluster definition</summary>
+
+> ⚠️ **Note:** Two changes from the original tutorial:
+> 1. `vm_size` uses `var.vm_size` instead of hardcoded `Standard_D2_v2` — that size
+>    is not available in all Azure subscriptions. `Standard_D2s_v3` is used as default.
+> 2. SSH key reference changed from `azapi_resource_action.ssh_public_key_gen.output.publicKey`
+>    to `tls_private_key.ssh.public_key_openssh` to match the new `ssh.tf`.
 
 ```hcl
 # Generate random resource group name
@@ -483,7 +482,7 @@ resource "azurerm_kubernetes_cluster" "k8s" {
 
   default_node_pool {
     name       = "agentpool"
-    vm_size    = "Standard_D2_v2"
+    vm_size    = var.vm_size
     node_count = var.node_count
   }
 
@@ -491,7 +490,7 @@ resource "azurerm_kubernetes_cluster" "k8s" {
     admin_username = var.username
 
     ssh_key {
-      key_data = azapi_resource_action.ssh_public_key_gen.output.publicKey
+      key_data = tls_private_key.ssh.public_key_openssh
     }
   }
 
@@ -508,6 +507,11 @@ resource "azurerm_kubernetes_cluster" "k8s" {
 
 <details>
 <summary><strong>📁 variables.tf</strong> — Input variable definitions</summary>
+
+> ⚠️ **Note:** Added `vm_size` variable (not present in the original tutorial).
+> `Standard_D2_v2` from the original is not available in all Azure subscriptions.
+> Using `var.vm_size` with `Standard_D2s_v3` as default makes it easy to override
+> without editing `main.tf`: `terraform apply -var="vm_size=Standard_D4s_v3"`.
 
 ```hcl
 variable "resource_group_location" {
@@ -528,16 +532,16 @@ variable "node_count" {
   default     = 3
 }
 
-variable "msi_id" {
-  type        = string
-  description = "The Managed Service Identity ID. Set this value if you're running this example using Managed Identity as the authentication method."
-  default     = null
-}
-
 variable "username" {
   type        = string
   description = "The admin username for the new cluster."
   default     = "azureadmin"
+}
+
+variable "vm_size" {
+  type        = string
+  description = "VM size for the default node pool. Standard_D2_v2 from the original tutorial may not be available in all subscriptions."
+  default     = "Standard_D2s_v3"
 }
 ```
 
@@ -547,7 +551,7 @@ variable "username" {
 | `resource_group_name_prefix` | string | `rg` | Prefix for the resource group name |
 | `node_count` | number | `3` | Initial number of nodes in the node pool |
 | `username` | string | `azureadmin` | Admin username for the cluster nodes |
-| `msi_id` | string | `null` | Managed Service Identity ID (optional) |
+| `vm_size` | string | `Standard_D2s_v3` | VM size for the node pool ⚠️ changed from original |
 
 </details>
 
@@ -850,6 +854,22 @@ spec:
 ```
 
 </details>
+
+---
+
+## 🔄 Changes from the Original Tutorial
+
+The original Microsoft quickstart uses configurations that do not work out of the box
+in GitHub Codespaces. The table below documents every change made and why.
+
+| File | Original | This repo | Reason |
+|------|----------|-----------|--------|
+| `providers.tf` | `azapi ~>1.5`, `time 0.9.1` | Removed both | `azapi` fails in Codespaces — no Managed Identity |
+| `providers.tf` | No `tls` provider | Added `tls ~>4.0` | Required for local SSH key generation |
+| `ssh.tf` | `azapi_resource` + `azapi_resource_action` | `tls_private_key` | Generates RSA key locally, no Azure auth needed |
+| `main.tf` | `vm_size = "Standard_D2_v2"` | `vm_size = var.vm_size` | `Standard_D2_v2` not available in all subscriptions |
+| `variables.tf` | No `vm_size` variable | Added `vm_size` (`Standard_D2s_v3`) | Allows override without editing `main.tf` |
+| `variables.tf` | `msi_id` variable present | Removed | Not needed without `azapi` |
 
 ---
 
